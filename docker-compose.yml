@@ -1,0 +1,89 @@
+# use version according to the docker engine
+version: "3.8"
+
+######### Services #########
+services:
+
+     # setup php-FPM and mount application code into the container
+    api.z3:
+        build:
+            # From which directory you want to execute the build process
+            context: .docker/dev/php
+            # Docker config file to be used when building container image
+            dockerfile: Dockerfile
+        # Name of the container to be shown in logs and CLI
+        container_name: api.z3
+        # set environment variables to be used in place of .env file of laravel
+        environment:
+            # instead of localhost as in .env, we will pass it the name of service defined in bottom
+            # Name of the service which will be handling database related stuff and pass that data into .env file
+
+            # If you down want to use xDebug, set remote_enable=0
+            XDEBUG_CONFIG: "remote_enable=1"
+            PHP_IDE_CONFIG: "serverName=Docker"
+        ports:
+          - "8025:8000"
+        restart: always
+        volumes:
+            # map main backend code directory into container at var/www to get changes in container instantly
+            - ./:/var/www
+        depends_on: 
+            - db.z3
+        networks:
+            - backend-net.z3
+
+    # database setup for laravel
+    db.z3:
+        image: mysql:8.0.22
+        container_name: db.z3
+        restart: always
+        cap_add:
+            - SYS_NICE  # CAP_SYS_NICE
+        environment:
+            MYSQL_DATABASE: "laravel"
+            MYSQL_ROOT_PASSWORD: "root"
+        command: --explicit_defaults_for_timestamp
+        ports:
+            - "8022:3306"
+        # in order to make data persistent even after container is closed, mount its data
+        volumes:
+            - dbdata:/var/lib/mysql
+            - ./.docker/dev/mysql/my.cnf:/etc/mysql/conf.d/my.cnf:ro
+        networks:
+            - backend-net.z3
+
+    # Mailhog container (SMTP testing)
+    mail.z3:
+        image: mailhog/mailhog
+        container_name: mail.z3
+        restart: always
+        ports:
+            - 8023:8025
+        networks:
+            - backend-net.z3
+
+    # setup nginx server to handle backend requests
+    webserver.z3:
+        image: nginx:1.17-alpine
+        container_name: webserver.z3
+        restart: always
+        # 8000 port on container and 80 on host OS
+        ports:
+            - "8021:90"
+        volumes:
+            - ./:/var/www
+            - ./.docker/dev/nginx/logs:/var/log/nginx
+            - ./.docker/dev/nginx/conf.d:/etc/nginx/conf.d:ro
+        depends_on:
+            - api.z3
+        links:
+            - api.z3
+        networks:
+            - backend-net.z3
+        
+volumes:
+    dbdata:
+        driver: local
+
+networks:
+    backend-net.z3: {}        
